@@ -161,14 +161,14 @@ func (a *MenmosAgent) getBinary(version string, binary string) (binaryPath strin
 
 func (a *MenmosAgent) Shutdown() {
 	var wg sync.WaitGroup
-	for nodeID, process := range a.runningNodes {
+	for nodeID := range a.runningNodes {
 		wg.Add(1)
-		go func(nodeID string, process *xecute.Native) {
+		go func(nodeID string) {
 			defer wg.Done()
-			if err := process.Stop(); err != nil {
+			if err := a.StopNode(nodeID); err != nil {
 				a.log.Errorf("failed to shutdown node '%s': %v", nodeID, err)
 			}
-		}(nodeID, process)
+		}(nodeID)
 	}
 	wg.Wait()
 

@@ -48,6 +48,9 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string, logFile io.W
 	p.setStatus(StatusStarting)
 
 	defer logFile.Close()
+	defer func() {
+		p.stop <- true
+	}()
 
 	// Build the command.
 	p.cmd = exec.Command(p.binaryPath, "--cfg", configPath)
@@ -100,8 +103,6 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string, logFile io.W
 	} else {
 		p.setStatus(StatusStopped)
 	}
-
-	p.stop <- true
 }
 
 func (p *Native) Start(logLevel LogLevel) error {
@@ -136,4 +137,8 @@ func (p *Native) Stop() error {
 	timer.Stop()
 
 	return nil
+}
+
+func (p *Native) Status() string {
+	return p.status
 }

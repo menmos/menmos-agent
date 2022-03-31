@@ -4,43 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"go.uber.org/zap"
 )
 
 type errorResponse struct {
-	Error error `json:"error,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 func logStatus(log *zap.SugaredLogger, r *http.Request, status int) {
-	fmt.Println("logging status")
 	if log == nil {
-		fmt.Println("short-circuit")
 		return
 	}
 
-	str := fmt.Sprintf("[%s] %s - [%d]", r.Method, r.URL.Path, status)
-	if status == http.StatusOK {
-		fmt.Println("logging ok")
-		log.Info(str)
-	} else {
-		log.Warn(str)
-	}
+	log.Infof("[%s] %s - [%d]", r.Method, r.URL.Path, status)
 }
 
 func handleError(w http.ResponseWriter, err error, r *http.Request, log *zap.SugaredLogger) {
 
-	body, err := json.Marshal(&errorResponse{Error: err})
-	if err != nil {
-		panic(err)
+	body, jsonErr := json.Marshal(&errorResponse{Error: err.Error()})
+	if jsonErr != nil {
+		panic(jsonErr)
 	}
 
 	statusCode := http.StatusInternalServerError
 	if errors.Is(err, errInternalServerError) {
 		log.Errorf("error processing request: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
+	} else if errors.Is(err, errBadRequest) {
+		w.WriteHeader(http.StatusBadRequest)
+	} else if errors.Is(err, errNotFound) {
+		w.WriteHeader(http.StatusNotFound)
 	} else {
 		log.Errorf("unhandled error: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -51,10 +46,11 @@ func handleError(w http.ResponseWriter, err error, r *http.Request, log *zap.Sug
 
 func wrapRoute(log *zap.SugaredLogger, f func(ctx context.Context, w http.ResponseWriter, r *http.Request) (interface{}, error)) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("here in middleware")
 		ctx := context.Background()
 
 		rval, err := f(ctx, w, r)
+		w.Header().Add("Content-Type", "aplication/json")
+
 		if err != nil {
 			handleError(w, err, r, log)
 		} else {

@@ -78,6 +78,23 @@ func (a *MenmosAgent) createAmphoraConfig(nodeDir string, request *payload.Creat
 	return procConfig.HealthCheckURL(), nil
 }
 
+func (a *MenmosAgent) getNodeInfo(nodeID string) (nodeInfo, error) {
+	nodeDir := path.Join(a.nodeDir(), nodeID)
+
+	// Load the agent node info.
+	infoBytes, err := os.ReadFile(path.Join(nodeDir, AGENT_NODE_INFO_FILE))
+	if err != nil {
+		return nodeInfo{}, err
+	}
+
+	var info nodeInfo
+	if err := json.Unmarshal(infoBytes, &info); err != nil {
+		return nodeInfo{}, err
+	}
+
+	return info, nil
+}
+
 func (a *MenmosAgent) GetNode(nodeID string) (*payload.NodeResponse, error) {
 	if process, ok := a.runningNodes[nodeID]; ok {
 		info, err := a.getNodeInfo(nodeID)
@@ -156,7 +173,11 @@ func (a *MenmosAgent) CreateNode(request *payload.CreateNodeRequest) (*payload.N
 		}
 	}
 
-	process := xecute.NewNativeProcess(nodeDir, binPath, healthCheckURL, a.log.Named(string(request.Type)).Named(nodeID).Desugar())
+	process, err := xecute.NewNativeProcess(nodeDir, binPath, healthCheckURL, a.log.Named(string(request.Type)).Named(nodeID).Desugar())
+	if err != nil {
+		return nil, err
+	}
+
 	if err := process.Start(xecute.LogNormal); err != nil { // TODO: Find a way to customize this loglevel.
 		return nil, err
 	}
@@ -203,23 +224,6 @@ func (a *MenmosAgent) StopNode(nodeID string) error {
 	return nil
 }
 
-func (a *MenmosAgent) getNodeInfo(nodeID string) (nodeInfo, error) {
-	nodeDir := path.Join(a.nodeDir(), nodeID)
-
-	// Load the agent node info.
-	infoBytes, err := os.ReadFile(path.Join(nodeDir, AGENT_NODE_INFO_FILE))
-	if err != nil {
-		return nodeInfo{}, err
-	}
-
-	var info nodeInfo
-	if err := json.Unmarshal(infoBytes, &info); err != nil {
-		return nodeInfo{}, err
-	}
-
-	return info, nil
-}
-
 func (a *MenmosAgent) StartNode(nodeID string) error {
 	if process, ok := a.runningNodes[nodeID]; ok && (process.Status() != xecute.StatusStopped && process.Status() != xecute.StatusError) {
 		return fmt.Errorf("node '%s' is already running", nodeID)
@@ -237,7 +241,11 @@ func (a *MenmosAgent) StartNode(nodeID string) error {
 		return err
 	}
 
-	process := xecute.NewNativeProcess(nodeDir, binPath, info.HealthCheckURL, a.log.Named(info.Binary).Named(nodeID).Desugar())
+	process, err := xecute.NewNativeProcess(nodeDir, binPath, info.HealthCheckURL, a.log.Named(info.Binary).Named(nodeID).Desugar())
+	if err != nil {
+		return err
+	}
+
 	if err := process.Start(xecute.LogNormal); err != nil { // TODO: Find a way to customize this loglevel.
 		return err
 	}
@@ -246,6 +254,16 @@ func (a *MenmosAgent) StartNode(nodeID string) error {
 	a.log.Infof("node '%s' started", nodeID)
 
 	return nil
+}
+
+func (a *MenmosAgent) GetNodeLogs(nodeID string, nbOfLines uint) (*payload.GetLogsResponse, error) {
+	if process, ok := a.runningNodes[nodeID]; ok {
+		return &payload.GetLogsResponse{
+			Log: process.GetLogs(nbOfLines),
+		}, nil
+	} else {
+		return nil, fmt.Errorf("node '%s' does not exist", nodeID)
+	}
 }
 
 // TODO: Add call to get logs of a node

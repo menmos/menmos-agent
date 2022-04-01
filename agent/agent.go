@@ -144,7 +144,7 @@ func (a *MenmosAgent) getBinary(version, binary string) (binaryPath string, err 
 		return a.artifacts.Get(version, binary)
 	} else if a.config.LocalBinaryPath != "" {
 		// Fallback on local binaries.
-		binaryPath = fmt.Sprintf(a.config.LocalBinaryPath, binary)
+		binaryPath = path.Join(a.config.LocalBinaryPath, binary)
 	}
 
 	return

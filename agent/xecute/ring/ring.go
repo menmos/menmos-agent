@@ -58,3 +58,11 @@ func (b *Buffer[T]) Read() T {
 
 	return val
 }
+
+func (b *Buffer[T]) Peek(offset int) T {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	idx := (int(b.readHead) + offset) % int(b.size)
+	return b.entries[idx]
+}

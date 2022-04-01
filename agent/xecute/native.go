@@ -2,7 +2,6 @@ package xecute
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -19,6 +18,7 @@ type Native struct {
 	workdir        string
 	cmd            *exec.Cmd
 	healthCheckURL string
+	logWriter      *logWriter
 
 	// Management stuff
 	logger *zap.SugaredLogger
@@ -26,17 +26,25 @@ type Native struct {
 	status Status
 }
 
-func NewNativeProcess(workdir, binaryPath, healthCheckURL string, logger *zap.Logger) *Native {
+func NewNativeProcess(workdir, binaryPath, healthCheckURL string, logger *zap.Logger) (*Native, error) {
+	logPath := path.Join(workdir, "log.json")
+	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, err
+	}
+	logWriter := newLogWriter(logFile)
+
 	return &Native{
 		binaryPath:     binaryPath,
 		workdir:        workdir,
 		cmd:            nil,
 		healthCheckURL: healthCheckURL,
+		logWriter:      logWriter,
 
 		logger: logger.Sugar(),
 		stop:   make(chan bool),
 		status: StatusStopped,
-	}
+	}, nil
 }
 
 func (p *Native) setStatus(status Status) {
@@ -44,10 +52,9 @@ func (p *Native) setStatus(status Status) {
 	p.logger.Infof("setting status to '%v'", status)
 }
 
-func (p *Native) stateWatcher(logLevel LogLevel, configPath string, logFile io.WriteCloser) {
+func (p *Native) stateWatcher(logLevel LogLevel, configPath string) {
 	p.setStatus(StatusStarting)
 
-	defer logFile.Close()
 	defer func() {
 		p.stop <- true
 	}()
@@ -56,8 +63,8 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string, logFile io.W
 	p.cmd = exec.Command(p.binaryPath, "--cfg", configPath)
 
 	// Redirect both outputs to the log file.
-	p.cmd.Stdout = logFile
-	p.cmd.Stderr = logFile
+	p.cmd.Stdout = p.logWriter
+	p.cmd.Stderr = p.logWriter
 
 	// Set the log level to the requested level.
 	p.cmd.Env = append(p.cmd.Env, fmt.Sprintf("MENMOS_LOG_LEVEL=%s", logLevel))
@@ -107,14 +114,8 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string, logFile io.W
 
 func (p *Native) Start(logLevel LogLevel) error {
 	configPath := path.Join(p.workdir, "config.toml")
-	logPath := path.Join(p.workdir, "log.json")
 
-	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		return err
-	}
-
-	go p.stateWatcher(logLevel, configPath, logFile)
+	go p.stateWatcher(logLevel, configPath)
 
 	return nil
 }
@@ -122,6 +123,11 @@ func (p *Native) Start(logLevel LogLevel) error {
 func (p *Native) Stop() error {
 	if p.status != StatusHealthy && p.status == StatusStarting {
 		return nil // We're already stopped
+	}
+
+	if p.cmd == nil || p.cmd.Process == nil {
+		p.logger.Info("process never started. maybe a crash?")
+		return nil
 	}
 
 	p.logger.Info("asking nicely for process to quit")
@@ -137,6 +143,10 @@ func (p *Native) Stop() error {
 	timer.Stop()
 
 	return nil
+}
+
+func (p *Native) GetLogs(numberOfLines uint) []interface{} {
+	return p.logWriter.GetLastNLines(int(numberOfLines))
 }
 
 func (p *Native) Status() string {

@@ -81,6 +81,15 @@ func (a *API) deleteNode(ctx context.Context, w http.ResponseWriter, r *http.Req
 	panic("bad routing config")
 }
 
+func (a *API) getNodeLogs(ctx context.Context, w http.ResponseWriter, r *http.Request) (interface{}, error) {
+	vars := mux.Vars(r)
+	if id, ok := vars["id"]; ok {
+		logs, err := a.agent.GetNodeLogs(id, 30) // TODO: take query param here
+		return logs, err
+	}
+	panic("bad routing config")
+}
+
 func (a *API) startNode(ctx context.Context, w http.ResponseWriter, r *http.Request) (interface{}, error) {
 	vars := mux.Vars(r)
 	if id, ok := vars["id"]; ok {
@@ -115,6 +124,7 @@ func (a *API) serve() {
 	r.HandleFunc("/node", wrapRoute(a.log, a.listNodes)).Methods("GET")
 	r.HandleFunc("/node/{id}", wrapRoute(a.log, a.getNode)).Methods("GET")
 	r.HandleFunc("/node/{id}", wrapRoute(a.log, a.deleteNode)).Methods("DELETE")
+	r.HandleFunc("/node/{id}/logs", wrapRoute(a.log, a.getNodeLogs)).Methods("GET")
 	r.HandleFunc("/node/{id}/start", wrapRoute(a.log, a.startNode)).Methods("POST")
 	r.HandleFunc("/node/{id}/stop", wrapRoute(a.log, a.stopNode)).Methods("POST")
 

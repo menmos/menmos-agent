@@ -60,3 +60,7 @@ type NodeResponse struct {
 type ListNodesResponse struct {
 	Nodes []*NodeResponse `json:"nodes,omitempty"`
 }
+
+type GetLogsResponse struct {
+	Log []interface{} `json:"log,omitempty"`
+}

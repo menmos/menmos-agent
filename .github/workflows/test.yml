@@ -1,0 +1,35 @@
+name: "Tests"
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: extractions/setup-just@v1
+
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: "1.18.x"
+
+      - name: Mount module cache
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: menmos-mount-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            menmos-agent-
+
+      - name: Build
+        run: |
+          just build
+
+      - name: Unit Tests
+        run: |
+          just test

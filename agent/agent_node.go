@@ -221,7 +221,7 @@ func (a *MenmosAgent) getNodeInfo(nodeID string) (nodeInfo, error) {
 }
 
 func (a *MenmosAgent) StartNode(nodeID string) error {
-	if _, ok := a.runningNodes[nodeID]; ok {
+	if process, ok := a.runningNodes[nodeID]; ok && (process.Status() != xecute.StatusStopped && process.Status() != xecute.StatusError) {
 		return fmt.Errorf("node '%s' is already running", nodeID)
 	}
 
@@ -247,3 +247,6 @@ func (a *MenmosAgent) StartNode(nodeID string) error {
 
 	return nil
 }
+
+// TODO: Add call to get logs of a node
+//		 (either JSON or text if the process crashed pre-json)

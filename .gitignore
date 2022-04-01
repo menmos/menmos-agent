@@ -1,3 +1,4 @@
 build/*
 .vscode/*
-agent_workspace/*
+menmos_agent_data/*
+agent.json

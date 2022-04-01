@@ -10,26 +10,30 @@ import (
 	"go.uber.org/zap"
 )
 
-const MENMOSD_PATH = "/Users/wduss/src/github.com/menmos/menmos/target/debug/menmosd"
-
 func main() {
-
+	config, err := loadConfig()
+	if err != nil {
+		panic(fmt.Sprintf("failed to load config: %v", err))
+	}
 	// Setup logging.
-	//logger, err := zap.NewProduction()
-	logger, err := zap.NewDevelopment()
+	var logger *zap.Logger
+	if config.Debug {
+		logger, err = zap.NewDevelopment()
+	} else {
+		logger, err = zap.NewProduction()
+	}
 	if err != nil {
 		panic(fmt.Sprintf("failed to init logger: %v", err))
 	}
 
 	defer logger.Sync()
 
-	config := agent.Config{AgentType: agent.Native, Path: "./agent_workspace"}
-	agt, err := agent.New(config, logger)
+	agt, err := agent.New(config.Agent, logger)
 	if err != nil {
 		panic(err)
 	}
 
-	srv := api.New(agt, api.Config{Host: "0.0.0.0", Port: 3030}, logger)
+	srv := api.New(agt, config.API, logger)
 	if err := srv.Start(); err != nil {
 		panic(err)
 	}

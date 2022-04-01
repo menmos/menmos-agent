@@ -9,6 +9,9 @@ build:
 clean:
     rm -rf {{OUTPUT_DIRECTORY}}
 
-# Run a menmos agent locally.
-menmos-agent:
+# Run a debug menmos agent locally.
+debug:
+    MENMOS_AGENT_DEBUG=true go run ./cmd/menmos-agent
+
+prod:
     go run ./cmd/menmos-agent

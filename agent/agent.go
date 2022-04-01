@@ -2,13 +2,12 @@ package agent
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path"
 	"sync"
 
-	"github.com/google/go-github/v43/github"
+	"github.com/menmos/menmos-agent/agent/artifact"
 	"github.com/menmos/menmos-agent/agent/xecute"
 	"github.com/pelletier/go-toml/v2"
 	"go.uber.org/zap"
@@ -69,8 +68,7 @@ type MenmosAgent struct {
 	config Config
 	log    *zap.SugaredLogger
 
-	// Resources
-	githubClient *github.Client
+	artifacts *artifact.Repository
 
 	// State
 	runningNodes map[string]*xecute.Native
@@ -78,15 +76,10 @@ type MenmosAgent struct {
 
 // New returns a new menmos agent.
 func New(config Config, log *zap.Logger) (*MenmosAgent, error) {
-
-	githubClient := github.NewClient(nil)
-
 	agent := &MenmosAgent{
-		config: config,
-		log:    log.Sugar().Named("agent"),
-
-		githubClient: githubClient,
-
+		config:       config,
+		log:          log.Sugar().Named("agent"),
+		artifacts:    artifact.NewRepository(path.Join(config.Path, "pkg"), config.GithubToken, log),
 		runningNodes: make(map[string]*xecute.Native),
 	}
 
@@ -146,14 +139,12 @@ func (a *MenmosAgent) restartComponents() error {
 	return nil
 }
 
-func (a *MenmosAgent) getBinary(version string, binary string) (binaryPath string, err error) {
+func (a *MenmosAgent) getBinary(version, binary string) (binaryPath string, err error) {
 	if version != "" {
-		err = errors.New("version pinning is not implemented yet")
-		// TODO: Get version from github and store in `pkgDir`
-	} else {
+		return a.artifacts.Get(version, binary)
+	} else if a.config.LocalBinaryPath != "" {
 		// Fallback on local binaries.
-		// TODO: Remove before push, only used for development.
-		binaryPath = fmt.Sprintf("/Users/wduss/src/github.com/menmos/menmos/target/debug/%s", binary)
+		binaryPath = fmt.Sprintf(a.config.LocalBinaryPath, binary)
 	}
 
 	return

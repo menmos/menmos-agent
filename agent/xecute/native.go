@@ -71,7 +71,7 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string, logFile io.W
 		return
 	}
 
-	retry := 10
+	retry := 100
 	for {
 		p.logger.Debug("checking if process is healthy")
 		resp, err := http.Get(p.healthCheckURL)

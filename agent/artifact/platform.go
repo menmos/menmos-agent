@@ -18,7 +18,7 @@ func architectureAliases(arch string) []string {
 	case "arm":
 		return []string{"arm"}
 	case "amd64":
-		return []string{"amd64", "x64", "x64_86"}
+		return []string{"amd64", "x64", "x86_64"}
 	case "arm64":
 		return []string{"arm64"}
 	default:

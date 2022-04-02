@@ -1,7 +1,5 @@
 package amphora
 
-import "fmt"
-
 type DirectoryConfig struct {
 	URL  string `toml:"url,omitempty"`
 	Port uint16 `toml:"port,omitempty"`
@@ -45,8 +43,4 @@ type Config struct {
 	Node      NodeConfig      `toml:"node,omitempty"`
 	Server    ServerConfig    `toml:"server,omitempty"`
 	Redirect  RedirectConfig  `toml:"redirect,omitempty"`
-}
-
-func (c *Config) HealthCheckURL() string {
-	return fmt.Sprintf("http://localhost:%d/health", c.Server.Port)
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
-func (a *MenmosAgent) createMenmosdConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.MenmosdConfig) (string, error) {
+func (a *MenmosAgent) createMenmosdConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.MenmosdConfig) error {
 	procConfig := menmosd.Config{
 		Node: menmosd.NodeSetting{
 			DbPath:           path.Join(nodeDir, "db"),
@@ -24,18 +24,17 @@ func (a *MenmosAgent) createMenmosdConfig(nodeDir string, request *payload.Creat
 		},
 		Server: menmosd.ServerSetting{
 			Type: config.ServerMode,
-			Port: config.Port, // TODO: Find free port.
 		},
 	}
 
 	if err := tomlWrite(procConfig, path.Join(nodeDir, "config.toml")); err != nil {
-		return "", err
+		return err
 	}
 
-	return procConfig.HealthCheckURL(), nil
+	return nil
 }
 
-func (a *MenmosAgent) createAmphoraConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.AmphoraConfig) (string, error) {
+func (a *MenmosAgent) createAmphoraConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.AmphoraConfig) error {
 
 	storageConfig := amphora.BlobStorageConfig{Type: string(config.BlobStorageType)}
 	if config.BlobStorageType == payload.BlobStorageDisk {
@@ -63,7 +62,6 @@ func (a *MenmosAgent) createAmphoraConfig(nodeDir string, request *payload.Creat
 		},
 		Server: amphora.ServerConfig{
 			CertificateStoragePath: path.Join(nodeDir, "cert"),
-			Port:                   config.ServerPort,
 		},
 		Redirect: amphora.RedirectConfig{
 			Ip:         config.RedirectIp,
@@ -72,10 +70,10 @@ func (a *MenmosAgent) createAmphoraConfig(nodeDir string, request *payload.Creat
 	}
 
 	if err := tomlWrite(procConfig, path.Join(nodeDir, "config.toml")); err != nil {
-		return "", err
+		return err
 	}
 
-	return procConfig.HealthCheckURL(), nil
+	return nil
 }
 
 func (a *MenmosAgent) getNodeInfo(nodeID string) (nodeInfo, error) {
@@ -103,11 +101,11 @@ func (a *MenmosAgent) GetNode(nodeID string) (*payload.NodeResponse, error) {
 		}
 
 		nodeResp := &payload.NodeResponse{
-			ID:             nodeID,
-			Binary:         string(info.Binary),
-			Version:        info.Version,
-			HealthCheckURL: info.HealthCheckURL,
-			Status:         process.Status(),
+			ID:      nodeID,
+			Binary:  string(info.Binary),
+			Version: info.Version,
+			Port:    process.Port(),
+			Status:  process.Status(),
 		}
 
 		return nodeResp, nil
@@ -126,11 +124,11 @@ func (a *MenmosAgent) ListNodes() (*payload.ListNodesResponse, error) {
 		}
 
 		nodeResp := &payload.NodeResponse{
-			ID:             nodeID,
-			Binary:         string(info.Binary),
-			Version:        info.Version,
-			HealthCheckURL: info.HealthCheckURL,
-			Status:         process.Status(),
+			ID:      nodeID,
+			Binary:  string(info.Binary),
+			Version: info.Version,
+			Port:    process.Port(),
+			Status:  process.Status(),
 		}
 
 		resp.Nodes = append(resp.Nodes, nodeResp)
@@ -152,14 +150,12 @@ func (a *MenmosAgent) CreateNode(request *payload.CreateNodeRequest) (*payload.N
 		return nil, err
 	}
 
-	var healthCheckURL string
 	if request.Type == payload.NodeMenmosd {
 		var requestConfig payload.MenmosdConfig
 		if err := mapstructure.Decode(request.Config, &requestConfig); err != nil {
 			return nil, err
 		}
-		healthCheckURL, err = a.createMenmosdConfig(nodeDir, request, &requestConfig)
-		if err != nil {
+		if err = a.createMenmosdConfig(nodeDir, request, &requestConfig); err != nil {
 			return nil, err
 		}
 	} else if request.Type == payload.NodeAmphora {
@@ -167,13 +163,12 @@ func (a *MenmosAgent) CreateNode(request *payload.CreateNodeRequest) (*payload.N
 		if err := mapstructure.Decode(request.Config, &requestConfig); err != nil {
 			return nil, err
 		}
-		healthCheckURL, err = a.createAmphoraConfig(nodeDir, request, &requestConfig)
-		if err != nil {
+		if err = a.createAmphoraConfig(nodeDir, request, &requestConfig); err != nil {
 			return nil, err
 		}
 	}
 
-	process, err := xecute.NewNativeProcess(nodeDir, binPath, healthCheckURL, a.log.Named(string(request.Type)).Named(nodeID).Desugar())
+	process, err := xecute.NewNativeProcess(nodeDir, binPath, a.log.Named(string(request.Type)).Named(nodeID).Desugar())
 	if err != nil {
 		return nil, err
 	}
@@ -186,17 +181,17 @@ func (a *MenmosAgent) CreateNode(request *payload.CreateNodeRequest) (*payload.N
 
 	// If we made it here, we commit a nodeinfo file along with the process.
 	// This file contains the info required to restart the process.
-	nodeInfo := nodeInfo{Version: request.Version, Binary: string(request.Type), HealthCheckURL: healthCheckURL}
+	nodeInfo := nodeInfo{Version: request.Version, Binary: string(request.Type)}
 	if err := jsonWrite(nodeInfo, path.Join(nodeDir, AGENT_NODE_INFO_FILE)); err != nil {
 		return nil, err
 	}
 
 	return &payload.NodeResponse{
-		ID:             nodeID,
-		Binary:         string(request.Type),
-		Version:        request.Version,
-		HealthCheckURL: healthCheckURL,
-		Status:         process.Status(),
+		ID:      nodeID,
+		Binary:  string(request.Type),
+		Version: request.Version,
+		Port:    process.Port(),
+		Status:  process.Status(),
 	}, nil
 }
 
@@ -241,7 +236,7 @@ func (a *MenmosAgent) StartNode(nodeID string) error {
 		return err
 	}
 
-	process, err := xecute.NewNativeProcess(nodeDir, binPath, info.HealthCheckURL, a.log.Named(info.Binary).Named(nodeID).Desugar())
+	process, err := xecute.NewNativeProcess(nodeDir, binPath, a.log.Named(info.Binary).Named(nodeID).Desugar())
 	if err != nil {
 		return err
 	}

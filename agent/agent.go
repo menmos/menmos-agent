@@ -76,10 +76,18 @@ type MenmosAgent struct {
 
 // New returns a new menmos agent.
 func New(config Config, log *zap.Logger) (*MenmosAgent, error) {
+	// Using a github release fetcher by default.
+
 	agent := &MenmosAgent{
-		config:       config,
-		log:          log.Sugar().Named("agent"),
-		artifacts:    artifact.NewRepository(path.Join(config.Path, "pkg"), config.GithubToken, log),
+		config: config,
+		log:    log.Sugar().Named("agent"),
+		artifacts: artifact.NewRepository(
+			artifact.RepositoryParams{
+				ReleaseFetcher: artifact.NewGithubFetcher(config.GithubToken),
+				Log:            log,
+				Path:           path.Join(config.Path, "pkg"),
+			},
+		),
 		runningNodes: make(map[string]*xecute.Native),
 	}
 

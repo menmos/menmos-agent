@@ -50,11 +50,11 @@ type AmphoraConfig struct {
 }
 
 type NodeResponse struct {
-	ID             string `json:"id,omitempty"`
-	Binary         string `json:"binary,omitempty"`
-	Version        string `json:"version,omitempty"`
-	HealthCheckURL string `json:"health_check_url,omitempty"`
-	Status         string `json:"status,omitempty"`
+	ID      string `json:"id,omitempty"`
+	Binary  string `json:"binary,omitempty"`
+	Version string `json:"version,omitempty"`
+	Port    uint16 `json:"port,omitempty"`
+	Status  string `json:"status,omitempty"`
 }
 
 type ListNodesResponse struct {

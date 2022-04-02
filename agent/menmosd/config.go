@@ -1,7 +1,5 @@
 package menmosd
 
-import "fmt"
-
 type NodeSetting struct {
 	DbPath           string `toml:"db_path,omitempty" json:"db_path,omitempty"`
 	AdminPassword    string `toml:"admin_password,omitempty" json:"admin_password,omitempty"`
@@ -21,8 +19,4 @@ type ServerSetting struct {
 type Config struct {
 	Server ServerSetting `toml:"server,omitempty" json:"server,omitempty"`
 	Node   NodeSetting   `toml:"node,omitempty" json:"node,omitempty"`
-}
-
-func (c *Config) HealthCheckURL() string {
-	return fmt.Sprintf("%s://localhost:%d/health", c.Server.Type, c.Server.Port)
 }

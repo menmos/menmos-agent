@@ -14,11 +14,11 @@ import (
 /// Manages a native xecute process.
 type Native struct {
 	// Executable information.
-	binaryPath     string
-	workdir        string
-	cmd            *exec.Cmd
-	healthCheckURL string
-	logWriter      *logWriter
+	binaryPath string
+	workdir    string
+	cmd        *exec.Cmd
+	logWriter  *logWriter
+	port       uint16
 
 	// Management stuff
 	logger *zap.SugaredLogger
@@ -26,7 +26,7 @@ type Native struct {
 	status Status
 }
 
-func NewNativeProcess(workdir, binaryPath, healthCheckURL string, logger *zap.Logger) (*Native, error) {
+func NewNativeProcess(workdir, binaryPath string, logger *zap.Logger) (*Native, error) {
 	logPath := path.Join(workdir, "log.json")
 	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
@@ -34,12 +34,18 @@ func NewNativeProcess(workdir, binaryPath, healthCheckURL string, logger *zap.Lo
 	}
 	logWriter := newLogWriter(logFile)
 
+	// Allocate a port for our process.
+	port, err := getFreePort()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Native{
-		binaryPath:     binaryPath,
-		workdir:        workdir,
-		cmd:            nil,
-		healthCheckURL: healthCheckURL,
-		logWriter:      logWriter,
+		binaryPath: binaryPath,
+		workdir:    workdir,
+		cmd:        nil,
+		logWriter:  logWriter,
+		port:       port,
 
 		logger: logger.Sugar(),
 		stop:   make(chan bool),
@@ -69,6 +75,7 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string) {
 	// Set the log level to the requested level.
 	p.cmd.Env = append(p.cmd.Env, fmt.Sprintf("MENMOS_LOG_LEVEL=%s", logLevel))
 	p.cmd.Env = append(p.cmd.Env, "MENMOS_LOG_JSON=true")
+	p.cmd.Env = append(p.cmd.Env, fmt.Sprintf("MENMOS_SERVER_PORT=%d", p.port))
 
 	// Start the process
 	p.logger.Debugf("starting the process")
@@ -78,10 +85,14 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string) {
 		return
 	}
 
+	// All xecute processes have the same health URL.
+	// FIXME(prod): support HTTPS if required
+	healthCheckURL := fmt.Sprintf("http://localhost:%d/health", p.port)
+
 	retry := 100
 	for {
 		p.logger.Debug("checking if process is healthy")
-		resp, err := http.Get(p.healthCheckURL)
+		resp, err := http.Get(healthCheckURL)
 		if err != nil || resp.StatusCode != 200 {
 			p.logger.Debug("process is not up yet")
 			retry -= 1
@@ -151,4 +162,8 @@ func (p *Native) GetLogs(numberOfLines uint) []interface{} {
 
 func (p *Native) Status() string {
 	return p.status
+}
+
+func (p *Native) Port() uint16 {
+	return p.port
 }

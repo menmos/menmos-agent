@@ -6,29 +6,34 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime"
 	"sync"
 
-	"github.com/google/go-github/v43/github"
 	"go.uber.org/zap"
 )
 
-type Repository struct {
-	githubClient *github.Client
-	log          *zap.SugaredLogger
-	path         string
+type RepositoryParams struct {
+	ReleaseFetcher MenmosReleaseFetcher
+	Log            *zap.Logger
+	Path           string
 }
 
-func NewRepository(path string, githubToken string, log *zap.Logger) *Repository {
+type Repository struct {
+	releaseFetcher MenmosReleaseFetcher
+	log            *zap.SugaredLogger
+	path           string
+}
+
+func NewRepository(params RepositoryParams) *Repository {
 	return &Repository{
-		githubClient: getGithubClient(githubToken),
-		log:          log.Sugar().Named("artifacts"),
-		path:         path,
+		releaseFetcher: params.ReleaseFetcher,
+		log:            params.Log.Sugar().Named("artifacts"),
+		path:           params.Path,
 	}
 }
 
-func (r *Repository) doesVersionDirectoryExist(path string) (bool, error) {
+func (r *Repository) doesDirectoryExist(path string) (bool, error) {
 	dirInfo, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return false, nil
@@ -58,22 +63,22 @@ func (r *Repository) doesArtifactExist(path string) (bool, error) {
 	return true, nil
 }
 
-func (r *Repository) downloadAsset(downloadURL, fileName, versionDirectory string) error {
+func (r *Repository) downloadAsset(tgtAsset *Asset, versionDirectory string) error {
 
-	if downloadURL == "" || fileName == "" {
+	if tgtAsset.DownloadURL == "" || tgtAsset.FullName == "" {
 		r.log.Debugf("skipped asset, missingfilename or url")
 		return nil
 	}
 
-	r.log.Debugf("downloading asset '%s'", fileName)
+	r.log.Debugf("downloading asset '%s'", tgtAsset.FullName)
 
-	assetPath := path.Join(versionDirectory, (&asset{FullName: fileName}).Name())
+	assetPath := filepath.Join(versionDirectory, tgtAsset.Name())
 	assetFile, err := os.OpenFile(assetPath, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.Get(downloadURL)
+	resp, err := http.Get(tgtAsset.DownloadURL)
 	if err != nil {
 		return err
 	}
@@ -84,11 +89,11 @@ func (r *Repository) downloadAsset(downloadURL, fileName, versionDirectory strin
 		return err
 	}
 
-	r.log.Infof("downloaded asset '%v'", fileName)
+	r.log.Infof("downloaded asset '%v'", tgtAsset.FullName)
 	return nil
 }
 
-func (r *Repository) getPlatformAssets(assets []*github.ReleaseAsset) []*github.ReleaseAsset {
+func (r *Repository) getPlatformAssets(assets []*Asset) []*Asset {
 	validArchitectures := []string{runtime.GOARCH}
 	if runtime.GOOS == "darwin" {
 		// Hack to support M1 macs, they _can_ use amd64 via rosetta
@@ -97,12 +102,11 @@ func (r *Repository) getPlatformAssets(assets []*github.ReleaseAsset) []*github.
 	}
 
 	for _, arch := range validArchitectures {
-		var archAssets []*github.ReleaseAsset
+		var archAssets []*Asset
 
-		for _, ghAsset := range assets {
-			currentAsset := asset{FullName: ghAsset.GetName()}
+		for _, currentAsset := range assets {
 			if architectureEqual(arch, currentAsset.Architecture()) && platformEqual(runtime.GOOS, currentAsset.Platform()) {
-				archAssets = append(archAssets, ghAsset)
+				archAssets = append(archAssets, currentAsset)
 			}
 		}
 
@@ -112,31 +116,31 @@ func (r *Repository) getPlatformAssets(assets []*github.ReleaseAsset) []*github.
 		}
 	}
 
-	return []*github.ReleaseAsset{}
+	return []*Asset{}
 }
 
 func (r *Repository) downloadRelease(version string) error {
-	release, _, err := r.githubClient.Repositories.GetReleaseByTag(context.Background(), "menmos", "menmos", version)
+	assets, err := r.releaseFetcher.GetRelease(context.Background(), version)
 	if err != nil {
 		return err
 
 	}
 	r.log.Debugf("got github release for '%s'", version)
 
-	versionDirectory := path.Join(r.path, version)
+	versionDirectory := filepath.Join(r.path, version)
 	if err := os.MkdirAll(versionDirectory, 0755); err != nil {
 		return err
 	}
 
 	var wg sync.WaitGroup
-	for _, asset := range r.getPlatformAssets(release.Assets) {
+	for _, currentAsset := range r.getPlatformAssets(assets) {
 		wg.Add(1)
-		go func(asset *github.ReleaseAsset) {
-			if err := r.downloadAsset(asset.GetBrowserDownloadURL(), asset.GetName(), versionDirectory); err != nil {
-				r.log.Errorf("failed to download asset '%s': %v", asset.GetName(), err.Error())
+		go func(currentAsset *Asset) {
+			if err := r.downloadAsset(currentAsset, versionDirectory); err != nil {
+				r.log.Errorf("failed to download asset '%s': %v", currentAsset.Name(), err.Error())
 			}
 			wg.Done()
-		}(asset)
+		}(currentAsset)
 	}
 
 	wg.Wait()
@@ -145,8 +149,8 @@ func (r *Repository) downloadRelease(version string) error {
 }
 
 func (r *Repository) Get(version, name string) (string, error) {
-	versionDir := path.Join(r.path, version)
-	exists, err := r.doesVersionDirectoryExist(versionDir)
+	versionDir := filepath.Join(r.path, version)
+	exists, err := r.doesDirectoryExist(versionDir)
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +163,7 @@ func (r *Repository) Get(version, name string) (string, error) {
 
 	// Check if artifact is there.
 	// If not -> error
-	artifactPath := path.Join(versionDir, name)
+	artifactPath := filepath.Join(versionDir, name)
 	exists, err = r.doesArtifactExist(artifactPath)
 	if err != nil {
 		return "", err

@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-type asset struct {
+type Asset struct {
 	FullName    string
 	DownloadURL string
 }
 
-func (a *asset) stripExtension() string {
+func (a *Asset) stripExtension() string {
 	return strings.TrimSuffix(a.FullName, filepath.Ext(a.FullName))
 }
 
-func (a *asset) Name() string {
+func (a *Asset) Name() string {
 	stripped := a.stripExtension()
 	if stripped == "" {
 		return "unknown"
@@ -25,7 +25,7 @@ func (a *asset) Name() string {
 	return strings.Split(stripped, "-")[0]
 }
 
-func (a *asset) Architecture() string {
+func (a *Asset) Architecture() string {
 	var supportedArchs = []string{"amd64", "arm64", "arm"}
 
 	for _, arch := range supportedArchs {
@@ -38,8 +38,8 @@ func (a *asset) Architecture() string {
 	return "unknown"
 }
 
-func (a *asset) Platform() string {
-	var supportedPlatforms = []string{"linux", "darwin"}
+func (a *Asset) Platform() string {
+	var supportedPlatforms = []string{"linux", "darwin", "windows"}
 
 	for _, platform := range supportedPlatforms {
 		for _, alias := range platformAliases(platform) {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/menmos/menmos-agent/agent/xecute/ring"
+	"github.com/menmos/menmos-agent/agent/native/xecute/ring"
 )
 
 const BUFFER_LOG_LINES = 512

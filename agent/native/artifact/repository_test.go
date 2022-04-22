@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/menmos/menmos-agent/agent/artifact"
+	"github.com/menmos/menmos-agent/agent/native/artifact"
 	"go.uber.org/zap"
 )
 

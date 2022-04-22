@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/menmos/menmos-agent/agent/xecute/ring"
+	"github.com/menmos/menmos-agent/agent/native/xecute/ring"
 )
 
 func TestBuffer_BasicReadWrite(t *testing.T) {

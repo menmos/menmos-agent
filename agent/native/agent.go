@@ -1,20 +1,119 @@
-package agent
+package native
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"path"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/menmos/menmos-agent/agent/amphora"
 	"github.com/menmos/menmos-agent/agent/menmosd"
-	"github.com/menmos/menmos-agent/agent/xecute"
+	"github.com/menmos/menmos-agent/agent/native/artifact"
+	"github.com/menmos/menmos-agent/agent/native/xecute"
 	"github.com/menmos/menmos-agent/payload"
 	"github.com/mitchellh/mapstructure"
+	"go.uber.org/zap"
 )
 
-func (a *MenmosAgent) createMenmosdConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.MenmosdConfig) error {
+const AGENT_NODE_INFO_FILE = ".agent_node_info.json"
+
+type NativeAgent struct {
+	// Misc. management stuff.
+	config NativeAgentConfig
+	log    *zap.SugaredLogger
+
+	artifacts *artifact.Repository
+
+	// State
+	runningNodes map[string]*xecute.Native
+}
+
+func New(config NativeAgentConfig, log *zap.Logger) (*NativeAgent, error) {
+	// Using a github release fetcher by default.
+
+	agent := &NativeAgent{
+		config: config,
+		log:    log.Sugar().Named("native-agent"),
+		artifacts: artifact.NewRepository(
+			artifact.RepositoryParams{
+				ReleaseFetcher: artifact.NewGithubFetcher(config.GithubToken),
+				Log:            log,
+				Path:           path.Join(config.Path, "pkg"),
+			},
+		),
+		runningNodes: make(map[string]*xecute.Native),
+	}
+
+	if err := agent.initWorkspace(); err != nil {
+		return nil, err
+	}
+
+	if err := agent.restartComponents(); err != nil {
+		return nil, err
+	}
+
+	return agent, nil
+}
+
+func (a *NativeAgent) pkgDir() string {
+	return path.Join(a.config.Path, "pkg")
+}
+
+func (a *NativeAgent) nodeDir() string {
+	return path.Join(a.config.Path, "node")
+}
+
+func (a *NativeAgent) initWorkspace() error {
+	a.log.Debug("initializing menmos agent workspace")
+
+	if err := ensureDirExists(a.config.Path); err != nil {
+		return err
+	}
+
+	if err := ensureDirExists(a.pkgDir()); err != nil {
+		return err
+	}
+
+	if err := ensureDirExists(a.nodeDir()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *NativeAgent) restartComponents() error {
+	entries, err := os.ReadDir(a.nodeDir())
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		if err := a.StartNode(entry.Name()); err != nil {
+			a.log.Errorf("failed to restart component '%s': %v", entry.Name(), err)
+		}
+	}
+
+	return nil
+}
+
+func (a *NativeAgent) getBinary(version, binary string) (binaryPath string, err error) {
+	if version != "" {
+		return a.artifacts.Get(version, binary)
+	} else if a.config.LocalBinaryPath != "" {
+		// Fallback on local binaries.
+		binaryPath = path.Join(a.config.LocalBinaryPath, binary)
+	}
+
+	return
+}
+
+func (a *NativeAgent) createMenmosdConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.MenmosdConfig) error {
 	procConfig := menmosd.Config{
 		Node: menmosd.NodeSetting{
 			DbPath:           path.Join(nodeDir, "db"),
@@ -34,7 +133,7 @@ func (a *MenmosAgent) createMenmosdConfig(nodeDir string, request *payload.Creat
 	return nil
 }
 
-func (a *MenmosAgent) createAmphoraConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.AmphoraConfig) error {
+func (a *NativeAgent) createAmphoraConfig(nodeDir string, request *payload.CreateNodeRequest, config *payload.AmphoraConfig) error {
 
 	storageConfig := amphora.BlobStorageConfig{Type: string(config.BlobStorageType)}
 	if config.BlobStorageType == payload.BlobStorageDisk {
@@ -76,7 +175,7 @@ func (a *MenmosAgent) createAmphoraConfig(nodeDir string, request *payload.Creat
 	return nil
 }
 
-func (a *MenmosAgent) getNodeInfo(nodeID string) (nodeInfo, error) {
+func (a *NativeAgent) getNodeInfo(nodeID string) (nodeInfo, error) {
 	nodeDir := path.Join(a.nodeDir(), nodeID)
 
 	// Load the agent node info.
@@ -93,7 +192,7 @@ func (a *MenmosAgent) getNodeInfo(nodeID string) (nodeInfo, error) {
 	return info, nil
 }
 
-func (a *MenmosAgent) GetNode(nodeID string) (*payload.NodeResponse, error) {
+func (a *NativeAgent) GetNode(nodeID string) (*payload.NodeResponse, error) {
 	if process, ok := a.runningNodes[nodeID]; ok {
 		info, err := a.getNodeInfo(nodeID)
 		if err != nil {
@@ -114,7 +213,7 @@ func (a *MenmosAgent) GetNode(nodeID string) (*payload.NodeResponse, error) {
 	return nil, nil
 }
 
-func (a *MenmosAgent) ListNodes() (*payload.ListNodesResponse, error) {
+func (a *NativeAgent) ListNodes() (*payload.ListNodesResponse, error) {
 	var resp payload.ListNodesResponse
 
 	for nodeID, process := range a.runningNodes {
@@ -137,7 +236,7 @@ func (a *MenmosAgent) ListNodes() (*payload.ListNodesResponse, error) {
 	return &resp, nil
 }
 
-func (a *MenmosAgent) CreateNode(request *payload.CreateNodeRequest) (*payload.NodeResponse, error) {
+func (a *NativeAgent) CreateNode(request *payload.CreateNodeRequest) (*payload.NodeResponse, error) {
 	binPath, err := a.getBinary(request.Version, string(request.Type))
 	if err != nil {
 		return nil, err
@@ -195,7 +294,7 @@ func (a *MenmosAgent) CreateNode(request *payload.CreateNodeRequest) (*payload.N
 	}, nil
 }
 
-func (a *MenmosAgent) DeleteNode(nodeID string) error {
+func (a *NativeAgent) DeleteNode(nodeID string) error {
 	if process, ok := a.runningNodes[nodeID]; ok {
 		status := process.Status()
 		if status == xecute.StatusStopped || status == xecute.StatusError {
@@ -209,17 +308,7 @@ func (a *MenmosAgent) DeleteNode(nodeID string) error {
 	return nil
 }
 
-func (a *MenmosAgent) StopNode(nodeID string) error {
-	if process, ok := a.runningNodes[nodeID]; ok {
-		if err := process.Stop(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (a *MenmosAgent) StartNode(nodeID string) error {
+func (a *NativeAgent) StartNode(nodeID string) error {
 	if process, ok := a.runningNodes[nodeID]; ok && (process.Status() != xecute.StatusStopped && process.Status() != xecute.StatusError) {
 		return fmt.Errorf("node '%s' is already running", nodeID)
 	}
@@ -251,7 +340,17 @@ func (a *MenmosAgent) StartNode(nodeID string) error {
 	return nil
 }
 
-func (a *MenmosAgent) GetNodeLogs(nodeID string, nbOfLines uint) (*payload.GetLogsResponse, error) {
+func (a *NativeAgent) StopNode(nodeID string) error {
+	if process, ok := a.runningNodes[nodeID]; ok {
+		if err := process.Stop(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (a *NativeAgent) GetNodeLogs(nodeID string, nbOfLines uint) (*payload.GetLogsResponse, error) {
 	if process, ok := a.runningNodes[nodeID]; ok {
 		return &payload.GetLogsResponse{
 			Log: process.GetLogs(nbOfLines),
@@ -261,5 +360,18 @@ func (a *MenmosAgent) GetNodeLogs(nodeID string, nbOfLines uint) (*payload.GetLo
 	}
 }
 
-// TODO: Add call to get logs of a node
-//		 (either JSON or text if the process crashed pre-json)
+func (a *NativeAgent) Shutdown() {
+	var wg sync.WaitGroup
+	for nodeID := range a.runningNodes {
+		wg.Add(1)
+		go func(nodeID string) {
+			defer wg.Done()
+			if err := a.StopNode(nodeID); err != nil {
+				a.log.Errorf("failed to shutdown node '%s': %v", nodeID, err)
+			}
+		}(nodeID)
+	}
+	wg.Wait()
+
+	a.log.Info("agent shutdown successfully")
+}

@@ -1,4 +1,4 @@
-package agent
+package native
 
 type nodeInfo struct {
 	Binary  string `json:"binary,omitempty"`

@@ -17,10 +17,10 @@ type agentConfiguration struct {
 }
 
 func defaultConfig() agentConfiguration {
-	return agentConfiguration{
+	c := agentConfiguration{
 		Debug: false,
 		Agent: agent.Config{
-			AgentType: agent.Native,
+			AgentType: agent.TypeNative,
 			Path:      "./menmos_agent_data",
 		},
 		API: api.Config{
@@ -28,6 +28,7 @@ func defaultConfig() agentConfiguration {
 			Port: 3030,
 		},
 	}
+	return c
 }
 
 func loadConfig() (agentConfiguration, error) {

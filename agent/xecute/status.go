@@ -1,31 +1,20 @@
 package xecute
 
-type LogLevel = string
-
-const (
-	LogDetailed = "detailed"
-	LogNormal   = "normal"
-)
-
 type Status = string
 
 const (
 	// Process & management routine not running.
-	StatusStopped = "stopped"
+	StatusStopped Status = "stopped"
 
 	// Management routine running, process not up yet.
-	StatusStarting = "starting"
+	StatusStarting Status = "starting"
 
 	// Process and management routine running and healthy.
-	StatusHealthy = "healthy"
+	StatusHealthy Status = "healthy"
 
 	// Process stopping, management routine still running.
-	StatusStopping = "stopping"
+	StatusStopping Status = "stopping"
 
 	// Process and management routine stopped because of an error.
-	StatusError = "error"
+	StatusError Status = "error"
 )
-
-type ProcessConfig interface {
-	HealthCheckURL() string
-}

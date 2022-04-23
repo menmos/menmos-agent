@@ -1,10 +1,28 @@
-package agent
+package creator
 
-import "github.com/menmos/menmos-agent/payload"
+import (
+	"github.com/menmos/menmos-agent/agent/xecute"
+	"github.com/menmos/menmos-agent/payload"
+)
 
-type Agent interface {
-	CreateMenmosd(id string, config *payload.MenmosdConfig) error
-	CreateAmphora(id string, config *payload.AmphoraConfig) error
+// A Node manages the execution of a single menmos process.
+type Node interface {
+	Start(level xecute.LogLevel) error
+	Stop() error
+	Delete() error
+
+	Logs(numberOfLines uint) []interface{}
+	Port() uint16
+	Status() xecute.Status
+}
+
+// A NodeCreator creates and restores nodes from a given configuration.
+type NodeCreator interface {
+	CreateMenmosd(id, version string, config *payload.MenmosdConfig) (Node, error)
+	CreateAmphora(id, version string, config *payload.AmphoraConfig) (Node, error)
+
+	RestoreMenmosd(id, version string) (Node, error)
+	RestoreAmphora(id, version string) (Node, error)
 }
 
 /*

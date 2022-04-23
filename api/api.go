@@ -16,13 +16,13 @@ import (
 
 // API regroups the route of the agent API.
 type API struct {
-	agent  agent.Agent
+	agent  *agent.Agent
 	config Config
 	log    *zap.SugaredLogger
 }
 
 // New returns a new API instance.
-func New(agent agent.Agent, config Config, log *zap.Logger) *API {
+func New(agent *agent.Agent, config Config, log *zap.Logger) *API {
 	return &API{
 		agent:  agent,
 		config: config,

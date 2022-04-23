@@ -1,4 +1,4 @@
-package xecute
+package process
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/menmos/menmos-agent/agent/xecute"
 	"go.uber.org/zap"
 )
 
@@ -23,7 +24,7 @@ type Native struct {
 	// Management stuff
 	logger *zap.SugaredLogger
 	stop   chan bool
-	status Status
+	status xecute.Status
 }
 
 func NewNativeProcess(workdir, binaryPath string, logger *zap.Logger) (*Native, error) {
@@ -49,17 +50,17 @@ func NewNativeProcess(workdir, binaryPath string, logger *zap.Logger) (*Native, 
 
 		logger: logger.Sugar(),
 		stop:   make(chan bool),
-		status: StatusStopped,
+		status: xecute.StatusStopped,
 	}, nil
 }
 
-func (p *Native) setStatus(status Status) {
+func (p *Native) setStatus(status xecute.Status) {
 	p.status = status
 	p.logger.Infof("setting status to '%v'", status)
 }
 
-func (p *Native) stateWatcher(logLevel LogLevel, configPath string) {
-	p.setStatus(StatusStarting)
+func (p *Native) stateWatcher(logLevel xecute.LogLevel, configPath string) {
+	p.setStatus(xecute.StatusStarting)
 
 	defer func() {
 		p.stop <- true
@@ -81,7 +82,7 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string) {
 	p.logger.Debugf("starting the process")
 	if err := p.cmd.Start(); err != nil {
 		p.logger.Errorf("failed to start process: %v", err)
-		p.setStatus(StatusError)
+		p.setStatus(xecute.StatusError)
 		return
 	}
 
@@ -97,7 +98,7 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string) {
 			p.logger.Debug("process is not up yet")
 			retry -= 1
 			if retry == 0 {
-				p.setStatus(StatusError)
+				p.setStatus(xecute.StatusError)
 				p.logger.Error("retries exceeded: process failed to come up")
 				return
 			}
@@ -106,24 +107,24 @@ func (p *Native) stateWatcher(logLevel LogLevel, configPath string) {
 			continue
 		}
 
-		p.setStatus(StatusHealthy)
+		p.setStatus(xecute.StatusHealthy)
 		break
 	}
 
 	// We wait for the process to stop - either from a crash or from a stop signal.
 	if err := p.cmd.Wait(); err != nil {
-		p.setStatus(StatusError)
+		p.setStatus(xecute.StatusError)
 		return
 	}
 
 	if p.cmd.ProcessState.ExitCode() != 0 {
-		p.setStatus(StatusError)
+		p.setStatus(xecute.StatusError)
 	} else {
-		p.setStatus(StatusStopped)
+		p.setStatus(xecute.StatusStopped)
 	}
 }
 
-func (p *Native) Start(logLevel LogLevel) error {
+func (p *Native) Start(logLevel xecute.LogLevel) error {
 	configPath := path.Join(p.workdir, "config.toml")
 
 	go p.stateWatcher(logLevel, configPath)
@@ -132,7 +133,7 @@ func (p *Native) Start(logLevel LogLevel) error {
 }
 
 func (p *Native) Stop() error {
-	if p.status != StatusHealthy && p.status == StatusStarting {
+	if p.status != xecute.StatusHealthy && p.status == xecute.StatusStarting {
 		return nil // We're already stopped
 	}
 
@@ -156,14 +157,23 @@ func (p *Native) Stop() error {
 	return nil
 }
 
-func (p *Native) GetLogs(numberOfLines uint) []interface{} {
-	return p.logWriter.GetLastNLines(int(numberOfLines))
+func (p *Native) Delete() error {
+	status := p.Status()
+	if status == xecute.StatusStopped || status == xecute.StatusError {
+		return os.RemoveAll(p.workdir)
+	} else {
+		return fmt.Errorf("cannot delete node in '%v' state, node needs to be stopped", status)
+	}
 }
 
-func (p *Native) Status() string {
-	return p.status
+func (p *Native) Logs(numberOfLines uint) []interface{} {
+	return p.logWriter.GetLastNLines(int(numberOfLines))
 }
 
 func (p *Native) Port() uint16 {
 	return p.port
+}
+
+func (p *Native) Status() xecute.Status {
+	return p.status
 }

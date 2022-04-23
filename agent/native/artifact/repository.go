@@ -77,6 +77,7 @@ func (r *Repository) downloadAsset(tgtAsset *Asset, versionDirectory string) err
 	if err != nil {
 		return err
 	}
+	defer assetFile.Close()
 
 	resp, err := http.Get(tgtAsset.DownloadURL)
 	if err != nil {
